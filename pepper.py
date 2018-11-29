@@ -1,7 +1,5 @@
 import numpy as np
-import scipy.stats
 import matplotlib.pyplot as plt
-import seaborn as sns
 
 def emittance(x, xp):
     return np.sqrt(np.linalg.det(np.cov(x,xp)))
@@ -11,7 +9,7 @@ class Pepperpot:
     Simplified simulation of a pepperpot
     """
 
-    def __init__(self, d=2, r=0.1, l=190, n=31):
+    def __init__(self, d=2, r=0.1, l=190, n=51):
         """
         Pepperpot parameters
         d = distance betweens holes (square grid)
@@ -35,8 +33,8 @@ class Pepperpot:
         """
         finds the closest centre positions for each particle
         """
-        inds_x = np.digitize(p["x"], self._cen["x"] + self._d/2)
-        inds_y = np.digitize(p["y"], self._cen["y"] + self._d/2)
+        inds_x = np.digitize(p["x"], self._cen["x"][:-1] + self._d/2)
+        inds_y = np.digitize(p["y"], self._cen["y"][:-1] + self._d/2)
         x_cen = self._cen["x"][inds_x]
         y_cen = self._cen["y"][inds_y]
         return {"x":x_cen, "y":y_cen}
@@ -62,8 +60,8 @@ class Pepperpot:
         p = dict type particle data
         """
         p_out = {}
-        p_out["x"] = p["x"] + self._l*np.tan(p["xp"])
-        p_out["y"] = p["y"] + self._l*np.tan(p["yp"])
+        p_out["x"] = p["x"] + self._l*np.tan(p["xp"]/1000)
+        p_out["y"] = p["y"] + self._l*np.tan(p["yp"]/1000)
         p_out["xp"] = p["xp"][:]
         p_out["yp"] = p["yp"][:]
         return p_out
@@ -77,22 +75,74 @@ class Pepperpot:
         cen = self.find_closest_centres(p)
         p_out["x"] = cen["x"]
         p_out["y"] = cen["y"]
-        p_out["xp"] = np.arctan2(p["x"]-cen["x"], self._l)
-        p_out["yp"] = np.arctan2(p["y"]-cen["y"], self._l)
+        p_out["xp"] = 1000 * np.arctan2(p["x"]-cen["x"], self._l)
+        p_out["yp"] = 1000 * np.arctan2(p["y"]-cen["y"], self._l)
         return p_out
 
-    def measurement(self, p_inp):
+    def measure(self, p_inp):
         p_msk = self.mask_particles(p_inp)
         p_scr = self.project_on_screen(p_msk)
         p_rec = self.reconstruct_phase_space(p_scr)
-        emit_inp_x = 1000 * emittance(p_inp["x"], p_inp["xp"])
-        emit_inp_y = 1000 * emittance(p_inp["y"], p_inp["yp"])
-        emit_rec_x = 1000 * emittance(p_rec["x"], p_rec["xp"])
-        emit_rec_y = 1000 * emittance(p_rec["y"], p_rec["yp"])
+        emit_inp_x = emittance(p_inp["x"], p_inp["xp"])
+        emit_inp_y = emittance(p_inp["y"], p_inp["yp"])
+        emit_rec_x = emittance(p_rec["x"], p_rec["xp"])
+        emit_rec_y = emittance(p_rec["y"], p_rec["yp"])
         res = {"p_inp":p_inp, "p_msk":p_msk, "p_scr":p_scr, "p_rec": p_rec,
                "emit_inp_x": emit_inp_x, "emit_inp_y": emit_inp_y,
                "emit_rec_x": emit_rec_x, "emit_rec_y": emit_rec_y}
         return res
+
+    def visualise_measurement(self, res):  
+        fig, axs = plt.subplots(2, 3, figsize=(16,10), dpi=300)
+
+        axs[0, 0].plot(res["p_inp"]["x"], res["p_inp"]["y"], "r,", label="input")
+        axs[0, 0].plot(res["p_msk"]["x"], res["p_msk"]["y"], "b,", label="mask")
+        axs[0, 0].set_title("Input x-y $n = %d$"%len(res["p_inp"]["x"]))
+        axs[0, 0].set_xlabel("x (mm)")
+        axs[0, 0].set_ylabel("y (mm)")
+        axs[0, 0].set_aspect('equal', 'datalim')
+
+        axs[0, 1].plot(res["p_inp"]["x"], res["p_inp"]["xp"], "r,", label="input")
+        axs[0, 1].plot(res["p_msk"]["x"], res["p_msk"]["xp"], "b,", label="mask")
+        axs[0, 1].set_title("Input x-x' $\\epsilon = %.3f$"%res["emit_inp_x"])
+        axs[0, 1].set_xlabel("x (mm)")
+        axs[0, 1].set_ylabel("x' (mrad)")
+
+        axs[0, 2].plot(res["p_inp"]["y"], res["p_inp"]["yp"], "r,", label="input")
+        axs[0, 2].plot(res["p_msk"]["y"], res["p_msk"]["yp"], "b,", label="mask")
+        axs[0, 2].set_title("Input y-y' $\\epsilon = %.3f$"%res["emit_inp_y"])
+        axs[0, 2].set_xlabel("y (mm)")
+        axs[0, 2].set_ylabel("y' (mrad)")
+
+        axs[1, 0].plot(res["p_scr"]["x"], res["p_scr"]["y"], "b,", label="input")
+        axs[1, 0].set_title("Screen x-y $n = %d$"%len(res["p_scr"]["x"]))
+        axs[1, 0].set_xlabel("x (mm)")
+        axs[1, 0].set_ylabel("y (mm)")
+        axs[1, 0].set_aspect('equal', "datalim")
+
+        xbins = self._cen["x"] + self._d/2
+        ybins = np.linspace(axs[0, 1].get_ylim()[0], axs[0, 1].get_ylim()[1], 100)
+        axs[1, 1].hist2d(res["p_rec"]["x"], res["p_rec"]["xp"],
+                         bins=[xbins, ybins], cmap="plasma", cmin=1)
+        axs[1, 1].plot(res["p_rec"]["x"], res["p_rec"]["xp"], "b,", label="recon")
+        axs[1, 1].set_title("Reconstruction x-x' $\\epsilon = %.3f$"%res["emit_rec_x"])
+        axs[1, 1].set_xlabel("x (mm)")
+        axs[1, 1].set_ylabel("x' (mrad)")
+        axs[1, 1].set_xlim(axs[0, 1].get_xlim())
+        axs[1, 1].set_ylim(axs[0, 1].get_ylim())
+
+        xbins = self._cen["y"] + self._d/2
+        ybins = np.linspace(axs[0, 1].get_ylim()[0], axs[0, 1].get_ylim()[1], 100)
+        axs[1, 2].hist2d(res["p_rec"]["y"], res["p_rec"]["yp"],
+                         bins=[xbins, ybins], cmap="plasma", cmin=1)
+        axs[1, 2].plot(res["p_rec"]["y"], res["p_rec"]["yp"], "b,", label="recon")
+        axs[1, 2].set_title("Reconstruction y-y' $\\epsilon = %.3f$"%res["emit_rec_y"])
+        axs[1, 2].set_xlabel("y (mm)")
+        axs[1, 2].set_ylabel("y' (mrad)")
+        axs[1, 2].set_xlim(axs[0, 2].get_xlim())
+        axs[1, 2].set_ylim(axs[0, 2].get_ylim())
+
+        plt.show()
 
     def show_mask(self):
         """
@@ -102,64 +152,14 @@ class Pepperpot:
         plt.plot(self._cen["x"], self._cen["y"], "o", figure=fig)
         plt.show()
 
-def visualise_measurement(res):  
-    fig, axs = plt.subplots(2, 3)
+    
+def generate_gaussian_beam_1D(n, sigx, sigxp, emitx):
+    covxxp = np.sqrt(sigx**2 * sigxp**2 - emitx**2)
+    covmat = np.array([[sigx**2, covxxp], [covxxp, sigxp**2]])
+    x, xp = np.random.multivariate_normal([0,0], covmat, n).T
+    return x, xp
 
-    axs[0, 0].plot(res["p_inp"]["x"], res["p_inp"]["y"], "r,", label="input")
-    axs[0, 0].plot(res["p_msk"]["x"], res["p_msk"]["y"], "b.", label="mask")
-    axs[0, 0].set_title("Input x-y")
-    axs[0, 0].set_xlabel("x (mm)")
-    axs[0, 0].set_ylabel("y (mm)")
-    axs[0, 0].set_aspect('equal', 'datalim')
-
-    axs[0, 1].plot(res["p_inp"]["x"], 1000 * res["p_inp"]["xp"], "r,", label="input")
-    axs[0, 1].plot(res["p_msk"]["x"], 1000 * res["p_msk"]["xp"], "b.", label="mask")
-    axs[0, 1].set_title("Input x-x' $\\epsilon = %.3f$"%res["emit_inp_x"])
-    axs[0, 1].set_xlabel("x (mm)")
-    axs[0, 1].set_ylabel("x' (mrad)")
-
-    axs[0, 2].plot(res["p_inp"]["y"], 1000 * res["p_inp"]["yp"], "r,", label="input")
-    axs[0, 2].plot(res["p_msk"]["y"], 1000 * res["p_msk"]["yp"], "b.", label="mask")
-    axs[0, 2].set_title("Input y-y' $\\epsilon = %.3f$"%res["emit_inp_y"])
-    axs[0, 2].set_xlabel("y (mm)")
-    axs[0, 2].set_ylabel("y' (mrad)")
-
-    axs[1, 0].plot(res["p_scr"]["x"], res["p_scr"]["y"], "b,", label="input")
-    axs[1, 0].set_title("Screen x-y")
-    axs[1, 0].set_xlabel("x (mm)")
-    axs[1, 0].set_ylabel("y (mm)")
-    axs[1, 0].set_aspect('equal', 'datalim')
-
-    axs[1, 1].plot(res["p_rec"]["x"], 1000 * res["p_rec"]["xp"], "b,", label="recon")
-    axs[1, 1].set_title("Reconstruction x-x' $\\epsilon = %.3f$"%res["emit_rec_x"])
-    axs[1, 1].set_xlabel("x (mm)")
-    axs[1, 1].set_ylabel("x' (mrad)")
-
-    axs[1, 2].plot(res["p_rec"]["y"], 1000 * res["p_rec"]["yp"], "b,", label="recon")
-    axs[1, 2].set_title("Reconstruction y-y' $\\epsilon = %.3f$"%res["emit_rec_y"])
-    axs[1, 2].set_xlabel("y (mm)")
-    axs[1, 2].set_ylabel("y' (mrad)")
-
-    plt.show()
-
-### Beam properties
-SIGX = 2.0
-SIGXP = 1.0e-3
-EMITX = 1.5e-3
-##derived
-COVXXP = np.sqrt(SIGX**2*SIGXP**2-EMITX**2)
-COVMATX = np.array([[SIGX**2, COVXXP],[COVXXP,SIGXP**2]])
-# print(COVMATX)
-# print(np.sqrt(np.linalg.det(COVMATX)))
-NSAMPLE = 1000000
-x, xp = np.random.multivariate_normal([0,0], COVMATX, NSAMPLE).T
-y, yp = np.random.multivariate_normal([0,0], COVMATX, NSAMPLE).T
-p = {"x":x, "y":y, "xp":xp, "yp":yp}
-
-mask = (x**2 + y**2) > 2.5**2
-p = {"x":x[mask], "y":y[mask], "xp":xp[mask], "yp":yp[mask]}
-# p = {"x":0., "y":0., "xp":0., "yp":2.}
-
-pot = Pepperpot()
-res = pot.measurement(p)
-visualise_measurement(res)
+def generate_gaussian_beam_2D(n, sigx, sigxp, emitx, sigy, sigyp, emity):
+    x, xp = generate_gaussian_beam_1D(n, sigx, sigxp, emitx)
+    y, yp = generate_gaussian_beam_1D(n, sigy, sigyp, emity)
+    return {"x":x, "y":y, "xp":xp, "yp":yp}
