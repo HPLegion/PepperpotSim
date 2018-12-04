@@ -2,14 +2,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 def emittance(x, xp):
-    return np.sqrt(np.linalg.det(np.cov(x,xp)))
+    return np.sqrt(np.linalg.det(np.cov(x, xp)))
+
+def emittance_corrected(x, xp, L, R):
+    v2 = R**2/4
+    return np.sqrt(np.linalg.det(np.cov(x, xp)-np.array([[v2,1.e3*v2/L],[1.e3*v2/L,1.e6*v2/L**2]])))
 
 class Pepperpot:
     """
     Simplified simulation of a pepperpot
     """
 
-    def __init__(self, d=2, r=0.1, l=190, n=51):
+    def __init__(self, d=2, r=0.045, l=190, n=51):
         """
         Pepperpot parameters
         d = distance betweens holes (square grid)
@@ -21,6 +25,8 @@ class Pepperpot:
         self._r = r
         self._l = l
         self._d = d
+        self._max_ang = 1000 * np.arctan2(self._d/2, self._l)
+        self._max_hole_ang = 1000 * np.arctan2(self._r, self._l)
 
         n = n - 1
         cen = np.arange(-n/2*d, (n/2 + 1)*d, d)
@@ -37,6 +43,8 @@ class Pepperpot:
         inds_y = np.digitize(p["y"], self._cen["y"][:-1] + self._d/2)
         x_cen = self._cen["x"][inds_x]
         y_cen = self._cen["y"][inds_y]
+        # x_cen = (p["x"]//self._d) * self._d
+        # y_cen = (p["y"]//self._d) * self._d
         return {"x":x_cen, "y":y_cen}
 
     def mask_particles(self, p):
@@ -79,20 +87,32 @@ class Pepperpot:
         p_out["yp"] = 1000 * np.arctan2(p["y"]-cen["y"], self._l)
         return p_out
 
-    def measure(self, p_inp):
+    def measure(self, p_inp, input_emit=False):
         p_msk = self.mask_particles(p_inp)
         p_scr = self.project_on_screen(p_msk)
         p_rec = self.reconstruct_phase_space(p_scr)
-        emit_inp_x = emittance(p_inp["x"], p_inp["xp"])
-        emit_inp_y = emittance(p_inp["y"], p_inp["yp"])
+        if input_emit:
+            emit_inp_x = emittance(p_inp["x"], p_inp["xp"])
+            emit_inp_y = emittance(p_inp["y"], p_inp["yp"])
+        else:
+            emit_inp_x = -1
+            emit_inp_y = -1
         emit_rec_x = emittance(p_rec["x"], p_rec["xp"])
         emit_rec_y = emittance(p_rec["y"], p_rec["yp"])
+        emit_rec_x = emittance_corrected(p_rec["x"], p_rec["xp"], self._l, self._r)
+        emit_rec_y = emittance_corrected(p_rec["y"], p_rec["yp"], self._l, self._r)
         res = {"p_inp":p_inp, "p_msk":p_msk, "p_scr":p_scr, "p_rec": p_rec,
                "emit_inp_x": emit_inp_x, "emit_inp_y": emit_inp_y,
                "emit_rec_x": emit_rec_x, "emit_rec_y": emit_rec_y}
         return res
 
-    def visualise_measurement(self, res):  
+    def visualise_measurement(self, res):
+        def plot_angle_lim(ax):
+            ax.axhline(self._max_ang, color="k", ls="--")
+            ax.axhline(self._max_ang - self._max_hole_ang, color="k", ls="--", lw=1)
+            ax.axhline(-self._max_ang, color="k", ls="--")
+            ax.axhline(-self._max_ang + self._max_hole_ang, color="k", ls="--", lw=1)
+
         fig, axs = plt.subplots(2, 3, figsize=(16,10), dpi=300)
 
         axs[0, 0].plot(res["p_inp"]["x"], res["p_inp"]["y"], "r,", label="input")
@@ -104,12 +124,14 @@ class Pepperpot:
 
         axs[0, 1].plot(res["p_inp"]["x"], res["p_inp"]["xp"], "r,", label="input")
         axs[0, 1].plot(res["p_msk"]["x"], res["p_msk"]["xp"], "b,", label="mask")
+        plot_angle_lim(axs[0, 1])
         axs[0, 1].set_title("Input x-x' $\\epsilon = %.3f$"%res["emit_inp_x"])
         axs[0, 1].set_xlabel("x (mm)")
         axs[0, 1].set_ylabel("x' (mrad)")
 
         axs[0, 2].plot(res["p_inp"]["y"], res["p_inp"]["yp"], "r,", label="input")
         axs[0, 2].plot(res["p_msk"]["y"], res["p_msk"]["yp"], "b,", label="mask")
+        plot_angle_lim(axs[0, 2])
         axs[0, 2].set_title("Input y-y' $\\epsilon = %.3f$"%res["emit_inp_y"])
         axs[0, 2].set_xlabel("y (mm)")
         axs[0, 2].set_ylabel("y' (mrad)")
@@ -125,6 +147,7 @@ class Pepperpot:
         axs[1, 1].hist2d(res["p_rec"]["x"], res["p_rec"]["xp"],
                          bins=[xbins, ybins], cmap="plasma", cmin=1)
         axs[1, 1].plot(res["p_rec"]["x"], res["p_rec"]["xp"], "b,", label="recon")
+        plot_angle_lim(axs[1, 1])
         axs[1, 1].set_title("Reconstruction x-x' $\\epsilon = %.3f$"%res["emit_rec_x"])
         axs[1, 1].set_xlabel("x (mm)")
         axs[1, 1].set_ylabel("x' (mrad)")
@@ -136,6 +159,7 @@ class Pepperpot:
         axs[1, 2].hist2d(res["p_rec"]["y"], res["p_rec"]["yp"],
                          bins=[xbins, ybins], cmap="plasma", cmin=1)
         axs[1, 2].plot(res["p_rec"]["y"], res["p_rec"]["yp"], "b,", label="recon")
+        plot_angle_lim(axs[1, 2])
         axs[1, 2].set_title("Reconstruction y-y' $\\epsilon = %.3f$"%res["emit_rec_y"])
         axs[1, 2].set_xlabel("y (mm)")
         axs[1, 2].set_ylabel("y' (mrad)")
