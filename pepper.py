@@ -108,10 +108,10 @@ class Pepperpot:
 
     def visualise_measurement(self, res):
         def plot_angle_lim(ax):
-            ax.axhline(self._max_ang, color="k", ls="--")
-            ax.axhline(self._max_ang - self._max_hole_ang, color="k", ls="--", lw=1)
-            ax.axhline(-self._max_ang, color="k", ls="--")
-            ax.axhline(-self._max_ang + self._max_hole_ang, color="k", ls="--", lw=1)
+            ax.axhline(self._max_ang, color="tab:gray", ls="--")
+            ax.axhline(self._max_ang - self._max_hole_ang, color="tab:gray", ls="--", lw=1)
+            ax.axhline(-self._max_ang, color="tab:gray", ls="--")
+            ax.axhline(-self._max_ang + self._max_hole_ang, color="tab:gray", ls="--", lw=1)
 
         fig, axs = plt.subplots(2, 3, figsize=(16,10), dpi=300)
 
