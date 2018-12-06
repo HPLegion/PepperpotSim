@@ -210,6 +210,17 @@ class PhaseSpaceReconstructor:
         plt.show()
 
     def plot_reconst(self, **kwargs):
+        def cs_ell(emit, alpha, beta, gamma):
+            xc = np.sqrt(emit*beta)
+            x = np.linspace(-xc, xc, 100)
+            root = np.sqrt((alpha * x/beta)**2 + emit - gamma*x**2)
+            base = - alpha * x/beta
+            xpu = base + root
+            xpl = base - root
+            x = np.append(np.append(x, x[::-1]), x[0])
+            xp = np.append(np.append(xpu, xpl[::-1]), base[0])
+            return x, xp
+        
         plt.figure()
         fig, axs = plt.subplots(1,2, figsize=(20,10))
 
@@ -219,6 +230,7 @@ class PhaseSpaceReconstructor:
                           self.image_scale_x/self.mask_screen_distance)
         axs[0].hist2d(self.map_x, self.map_xp, weights=self.image_masked_marginal_x,
                       bins=([xbins, ybins]), cmin=1, cmap="plasma")
+        axs[0].plot(*cs_ell(self.results["emittance_x"], self.results["alpha_x"], self.results["beta_x"], self.results["gamma_x"]))
         axs[0].set_xlabel("x (m)")
         axs[0].set_ylabel("x' (rad)")
         axs[0].set_title("x-x' Reconstruction")
@@ -229,6 +241,7 @@ class PhaseSpaceReconstructor:
                           self.image_scale_y/self.mask_screen_distance)
         axs[1].hist2d(self.map_y, self.map_yp, weights=self.image_masked_marginal_y,
                       bins=([xbins, ybins]), cmin=1, cmap="plasma")
+        axs[1].plot(*cs_ell(self.results["emittance_y"], self.results["alpha_y"], self.results["beta_y"], self.results["gamma_y"]))
         axs[1].set_xlabel("y (m)")
         axs[1].set_ylabel("y' (rad)")
         axs[1].set_title("y-y' Reconstruction")
