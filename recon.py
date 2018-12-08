@@ -135,12 +135,12 @@ class PhaseSpaceReconstructor:
         self.map_x = np.zeros_like(self.image_masked_marginal_x)
         for j in range(self.seperators_x.size-1):
             self.map_x[self.seperators_x[j]:self.seperators_x[j+1]] = self.holes_x[j]
-        self.map_xp = (np.arange(self.image_masked_marginal_x.size)*self.image_scale_x - self.map_x) / self.mask_screen_distance
+        self.map_xp = np.arctan2(np.arange(self.image_masked_marginal_x.size)*self.image_scale_x - self.map_x, self.mask_screen_distance)
 
         self.map_y = np.zeros_like(self.image_masked_marginal_y)
         for j in range(self.seperators_y.size-1):
             self.map_y[self.seperators_y[j]:self.seperators_y[j+1]] = self.holes_y[j]
-        self.map_yp = (np.arange(self.image_masked_marginal_y.size)*self.image_scale_y - self.map_y) / self.mask_screen_distance
+        self.map_yp = np.arctan2(np.arange(self.image_masked_marginal_y.size)*self.image_scale_y - self.map_y, self.mask_screen_distance)
 
         self.map_x = self.map_x - self.map_x.mean()
         self.map_xp = self.map_xp - self.map_xp.mean()
