@@ -28,7 +28,9 @@ import imageio
 #         self._subscribers.append(subscriber)
 
 class PhaseSpaceReconstructor:
-    def __init__(self):
+    def __init__(self, auto_update=True):
+        self.auto_update = auto_update
+
         self.image_raw = None
         self.image_filtered = None
         self.image_scale_x = 0.00004 #m/pix
@@ -57,18 +59,19 @@ class PhaseSpaceReconstructor:
 
     def __setattr__(self, name, value):
         super().__setattr__(name, value)
-        update_filters_subs = ["filter_offset", "filter_median", "filter_clip",
-                               "filter_offset_value", "filter_median_value",
-                               "filter_clip_value_min", "filter_clip_value_max"]
+        if self.auto_update:
+            update_filters_subs = ["filter_offset", "filter_median", "filter_clip",
+                                "filter_offset_value", "filter_median_value",
+                                "filter_clip_value_min", "filter_clip_value_max"]
 
-        update_reconstruction_subs = ["self.peakfind_distance_x", "peakfind_distance_y",
-                                      "peakfind_height_x", "peakfind_height_y", "mask_screen_distance",
-                                      "mask_hole_radius", "mask_hole_spacing_x", "mask_hole_spacing_y",
-                                      "image_scale_x", "image_scale_x"]
-        if name in update_filters_subs:
-            self.update_filters()
-        if name in update_reconstruction_subs:
-            self.update_reconstruction()
+            update_reconstruction_subs = ["self.peakfind_distance_x", "peakfind_distance_y",
+                                        "peakfind_height_x", "peakfind_height_y", "mask_screen_distance",
+                                        "mask_hole_radius", "mask_hole_spacing_x", "mask_hole_spacing_y",
+                                        "image_scale_x", "image_scale_x"]
+            if name in update_filters_subs:
+                self.update_filters()
+            if name in update_reconstruction_subs:
+                self.update_reconstruction()
 
     def load_image(self, file):
         self.image_raw = imageio.imread(file)
@@ -99,6 +102,7 @@ class PhaseSpaceReconstructor:
         self.peaks_y, _ = scipy.signal.find_peaks(self.image_filtered_marginal_y,
                                                   distance=self.peakfind_distance_y,
                                                   height=self.peakfind_height_y)
+    
     def _update_separators(self):
         roi = {}
         seps = (self.peaks_x[:-1] + self.peaks_x[1:])/2
@@ -147,7 +151,6 @@ class PhaseSpaceReconstructor:
         self.map_y = self.map_y - self.map_y.mean()
         self.map_yp = self.map_yp - self.map_yp.mean()
 
-
     def _update_results(self):
         results = {}
 
@@ -187,29 +190,33 @@ class PhaseSpaceReconstructor:
         self._update_maps()
         self._update_results()
 
-    def plot_input(self, **kwargs):
-        plt.figure(figsize=(15,10))
-        plt.imshow(self.image_raw, cmap="plasma", **kwargs)
-        plt.title("Raw image")
-        # plt.colorbar()
-        for x in self.seperators_x:
-            plt.axvline(self.image_roi["min_x"] + x)
-        for y in self.seperators_y:
-            plt.axhline(self.image_roi["min_y"] + y)
-        plt.show()
+    def plot_input(self, ax=None, **kwargs):     
+        if ax is None:
+            fig = plt.figure(figsize=(15,10))
+            ax = fig.subplots()
+        ax.imshow(self.image_raw, cmap="viridis", **kwargs, vmax=np.percentile(self.image_raw, 99.9))
+        ax.set_title("Raw image")
+        ax.axvline(self.image_roi["min_x"] + self.seperators_x[0], lw=0.5)
+        ax.axvline(self.image_roi["min_x"] + self.seperators_x[-1], lw=0.5)
+        ax.axhline(self.image_roi["min_y"] + self.seperators_y[0], lw=0.5)
+        ax.axhline(self.image_roi["min_y"] + self.seperators_y[-1], lw=0.5)
+        # for x in self.seperators_x:
+        #     ax.axvline(self.image_roi["min_x"] + x, lw=0.5)
+        # for y in self.seperators_y:
+        #     ax.axhline(self.image_roi["min_y"] + y, lw=0.5)
 
-    def plot_filtered_roi(self, **kwargs):
-        plt.figure(figsize=(15,10))
-        plt.imshow(self.image_masked, cmap="plasma", **kwargs)
-        plt.title("Filtered ROI")
-        # plt.colorbar()
+    def plot_filtered_roi(self, ax=None, **kwargs):
+        if ax is None:
+            fig = plt.figure(figsize=(15,10))
+            ax = fig.subplots()
+        ax.imshow(self.image_masked, cmap="viridis", **kwargs)
+        ax.set_title("Filtered ROI")
         for x in self.seperators_x:
-            plt.axvline(x)
+            ax.axvline(x, lw=0.5)
         for y in self.seperators_y:
-            plt.axhline(y)
-        plt.show()
+            ax.axhline(y, lw=0.5)
 
-    def plot_reconst(self, **kwargs):
+    def plot_reconst(self, ax=None, **kwargs):
         def cs_ell(emit, alpha, beta, gamma):
             xc = np.sqrt(emit*beta)
             x = np.linspace(-xc, xc, 100)
@@ -221,56 +228,53 @@ class PhaseSpaceReconstructor:
             xp = np.append(np.append(xpu, xpl[::-1]), base[0])
             return x, xp
         
-        plt.figure()
-        fig, axs = plt.subplots(1,2, figsize=(20,10))
+        if ax is None:
+            fig = plt.figure(figsize=(20,10))
+            ax = fig.subplots(1, 2)
 
         xbins = np.sort(np.unique(self.map_x-self.mask_hole_spacing_x/2))
         xbins = np.append(xbins, xbins[-1] + self.mask_hole_spacing_x)
         ybins = np.arange(self.map_xp.min(), self.map_xp.max(),
                           self.image_scale_x/self.mask_screen_distance)
-        axs[0].hist2d(self.map_x, self.map_xp, weights=self.image_masked_marginal_x,
-                      bins=([xbins, ybins]), cmin=1, cmap="plasma")
-        axs[0].plot(*cs_ell(self.results["emittance_x"], self.results["alpha_x"], self.results["beta_x"], self.results["gamma_x"]))
-        axs[0].set_xlabel("x (m)")
-        axs[0].set_ylabel("x' (rad)")
-        axs[0].set_title("x-x' Reconstruction")
+        ax[0].hist2d(self.map_x, self.map_xp, weights=self.image_masked_marginal_x,
+                      bins=([xbins, ybins]), cmin=1, cmap="viridis")
+        ax[0].plot(*cs_ell(self.results["emittance_x"], self.results["alpha_x"], self.results["beta_x"], self.results["gamma_x"]))
+        ax[0].set_xlabel("x (m)")
+        ax[0].set_ylabel("x' (rad)")
+        ax[0].set_title("x-x' Reconstruction")
 
         xbins = np.sort(np.unique(self.map_y-self.mask_hole_spacing_y/2))
         xbins = np.append(xbins, xbins[-1] + self.mask_hole_spacing_y)
         ybins = np.arange(self.map_yp.min(), self.map_yp.max(),
                           self.image_scale_y/self.mask_screen_distance)
-        axs[1].hist2d(self.map_y, self.map_yp, weights=self.image_masked_marginal_y,
-                      bins=([xbins, ybins]), cmin=1, cmap="plasma")
-        axs[1].plot(*cs_ell(self.results["emittance_y"], self.results["alpha_y"], self.results["beta_y"], self.results["gamma_y"]))
-        axs[1].set_xlabel("y (m)")
-        axs[1].set_ylabel("y' (rad)")
-        axs[1].set_title("y-y' Reconstruction")
+        ax[1].hist2d(self.map_y, self.map_yp, weights=self.image_masked_marginal_y,
+                      bins=([xbins, ybins]), cmin=1, cmap="viridis")
+        ax[1].plot(*cs_ell(self.results["emittance_y"], self.results["alpha_y"], self.results["beta_y"], self.results["gamma_y"]))
+        ax[1].set_xlabel("y (m)")
+        ax[1].set_ylabel("y' (rad)")
+        ax[1].set_title("y-y' Reconstruction")
 
-        plt.show()
+    def plot_marginals(self, ax=None, **kwargs):
+        if ax is None:
+            fig = plt.figure(figsize=(10,10))
+            ax = fig.subplots(2, 1)
 
-    def plot_marginals(self, **kwargs):
-        plt.figure()
-        fig, axs = plt.subplots(2,1, figsize=(10,10))
-
-
-        axs[0].set_xlabel("x (pix)")
-        axs[0].set_ylabel("Intensity (a.u.)")
-        axs[0].set_title("x mean intensity")
-        axs[0].plot(self.peaks_x, self.image_filtered_marginal_x[self.peaks_x], "o", label="peaks")
-        axs[0].plot(self.image_raw_marginal_x, c="r", lw=0.5, label="raw")
-        axs[0].plot(self.image_filtered_marginal_x, c="b", lw=0.5, label="filtered")
-        axs[0].legend()
+        ax[0].set_xlabel("x (pix)")
+        ax[0].set_ylabel("Intensity (a.u.)")
+        ax[0].set_title("x mean intensity")
+        ax[0].plot(self.peaks_x, self.image_filtered_marginal_x[self.peaks_x], "o", label="peaks")
+        ax[0].plot(self.image_raw_marginal_x, c="r", lw=0.5, label="raw")
+        ax[0].plot(self.image_filtered_marginal_x, c="b", lw=0.5, label="filtered")
+        ax[0].legend()
 
 
-        axs[1].set_xlabel("y (pix)")
-        axs[1].set_ylabel("Intensity (a.u.)")
-        axs[1].set_title("y mean intensity")
-        axs[1].plot(self.peaks_y, self.image_filtered_marginal_y[self.peaks_y], "o", label="peaks")
-        axs[1].plot(self.image_raw_marginal_y, c="r", lw=0.5, label="raw")
-        axs[1].plot(self.image_filtered_marginal_y, c="b", lw=0.5, label="filtered")
-        axs[1].legend()
-
-        plt.show()
+        ax[1].set_xlabel("y (pix)")
+        ax[1].set_ylabel("Intensity (a.u.)")
+        ax[1].set_title("y mean intensity")
+        ax[1].plot(self.peaks_y, self.image_filtered_marginal_y[self.peaks_y], "o", label="peaks")
+        ax[1].plot(self.image_raw_marginal_y, c="r", lw=0.5, label="raw")
+        ax[1].plot(self.image_filtered_marginal_y, c="b", lw=0.5, label="filtered")
+        ax[1].legend()
 
     def print_results(self):
         for key, item in self.results.items():
